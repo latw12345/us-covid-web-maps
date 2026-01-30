@@ -3,97 +3,76 @@
 
 <head>
     <meta charset="utf-8">
-    <title>COVID-19 Cases in the U.S.</title>
+    <title>COVID-19 Rates in the U.S.</title>
     <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+
     <link href="https://api.mapbox.com/mapbox-gl-js/v2.8.1/mapbox-gl.css" rel="stylesheet">
     <script src="https://api.mapbox.com/mapbox-gl-js/v2.8.1/mapbox-gl.js"></script>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-        }
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans&display=swap" rel="stylesheet">
 
-        #map {
-            position: absolute;
-            top: 0;
-            bottom: 0;
-            width: 100%;
-        }
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Open Sans', sans-serif; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
 
         #legend {
-            position: absolute;
-            bottom: 0;
-            right: 0;
-            width: 110px;
-            background: #555554;
-            margin-right: 20px;
-            margin-bottom: 40px;
-            padding: 10px 10px 10px 10px;
-            border-radius: 3px;
-            text-align: left;
-            font-family: 'Open Sans', sans-serif;
-            color: white
+            position: absolute; bottom: 0; right: 0; width: 110px;
+            background: #555554; margin-right: 20px; margin-bottom: 40px;
+            padding: 10px; border-radius: 3px; text-align: left; color: white;
         }
 
         #title {
-            position: absolute;
-            top: 0;
-            left: 0;
-            margin-top: 20px;
-            margin-left: 20px;
-            font-family: 'Open Sans', sans-serif;
-            font-size: 25pt;
-            color: white
+            position: absolute; top: 0; left: 0; margin: 20px;
+            font-size: 25pt; color: white;
         }
-
-
         #subtitle {
-            position: absolute;
-            top: 0;
-            left: 0;
-            margin-top: 70px;
-            margin-left: 20px;
-            font-family: 'Open Sans', sans-serif;
-            font-size: 15pt;
-            color: white
+            position: absolute; top: 0; left: 0; margin: 70px 0 0 20px;
+            font-size: 15pt; color: white;
         }
 
-        .break {
-            position: relative;
-            margin: 0px;
-            padding: 0px;
+        .break { position: relative; margin: 0; padding: 0; }
+        .dot { display: inline-block; margin-top: 5px; opacity: 0.6; }
+        .dot-label { position: absolute; top: 0; right: 0; font-style: italic; }
+
+        a { color: white; }
+
+        #searchBox {
+            position: absolute; top: 70px; right: 20px;
+            display: flex; gap: 6px; z-index: 5;
+        }
+        #countySearch {
+            padding: 8px; width: 210px; border-radius: 4px; border: none; outline: none; font-family: Open Sans;
+        }
+        #searchBtn {
+            padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-family: Open Sans;
         }
 
-        .dot {
-            display: inline-block;
-            margin-top: 5px;
-            border-radius: 50%;
-            opacity: 0.6;
-        }
-
-        .dot-label {
-            position: absolute;
-            top: 0;
-            right: 0;
-            font-style: italic;
-        }
-
-        a {
-            color: white
+        #toggleLabels {
+            position: absolute; top: 20px; right: 20px;
+            padding: 8px 12px; border-radius: 4px; border: none; cursor: pointer; font-family: Open Sans;
         }
     </style>
-    <link href="https://fonts.googleapis.com/css2?family=Open+Sans&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css"/>
 </head>
 
 <body>
     <div id="map"></div>
+    <div id="legend"></div>
+    <div id="title">COVID-19 Rates in the U.S.</div>
+    <div id="subtitle">on December 31st, 2020</div>
+
+    <div id="searchBox">
+        <input id="countySearch" type="text" placeholder="County, State (King, Washington)">
+        <button id="searchBtn">Search</button>
+    </div>
+    <button id="toggleLabels">Toggle Labels</button>
+
     <script>
-        const grades = [45, 65, 90, 130, 300], 
-            grades_labels = ['0-45', '46-65', '66-90', '91-130', '131-300'],
-            colors = ['#fef0d9', '#fdcc8a', '#fc8d59', '#e34a33', '#b30000']
-        mapboxgl.accessToken =
-            'pk.eyJ1IjoibGlhbnM3NyIsImEiOiJjbWt6NGxhMjcwZTJsM2Vwd2RtbWVvZHRuIn0.HDVAEM1yBC3D51XX3B4NPw';
+        const grades = [45, 65, 90, 130, 300];
+        const grades_labels = ['0-45', '46-65', '66-90', '91-130', '131-300'];
+        const colors = ['#fef0d9', '#fdcc8a', '#fc8d59', '#e34a33', '#b30000'];
+
+        mapboxgl.accessToken = 'pk.eyJ1IjoibGlhbnM3NyIsImEiOiJjbWt6NGxhMjcwZTJsM2Vwd2RtbWVvZHRuIn0.HDVAEM1yBC3D51XX3B4NPw';
+
         let map = new mapboxgl.Map({
             container: 'map',
             projection: 'albers',
@@ -103,29 +82,22 @@
             maxZoom: 9,
             center: [-98, 39]
         });
-        map.on('load', () => {
-            map.addSource('county-boundaries', {
-                type: 'geojson',
-                data: 'assets/us-covid-2020-rates.json'
-            });
+
+        let countyData;
+
+        map.on('load', async () => {
+            const response = await fetch('assets/us-covid-2020-rates.json');
+            countyData = await response.json();
+
+            map.addSource('county-boundaries', { type: 'geojson', data: countyData });
+
             map.addLayer({
-                'id': 'county-lines',
-                'type': 'line',
-                'source': 'county-boundaries',
-                'paint': {
-                    'line-color': '#555554',
-                    'line-width': 0.5
-                }
-            });
-            map.addLayer({
-                'id': 'county-fill',
-                'type': 'fill',
-                'source': 'county-boundaries',
-                'paint': {
+                id: 'county-fill',
+                type: 'fill',
+                source: 'county-boundaries',
+                paint: {
                     'fill-color': [
-                        'interpolate',
-                        ['linear'],
-                        ['get', 'rates'],
+                        'interpolate', ['linear'], ['get', 'rates'],
                         grades[0], colors[0],
                         grades[1], colors[1],
                         grades[2], colors[2],
@@ -135,110 +107,109 @@
                     'fill-opacity': 0.6
                 }
             });
+
+            map.addLayer({
+                id: 'county-lines',
+                type: 'line',
+                source: 'county-boundaries',
+                paint: { 'line-color': '#555554', 'line-width': 0.5 }
+            });
+
+            map.addLayer({
+                id: 'county-highlight',
+                type: 'line',
+                source: 'county-boundaries',
+                paint: { 'line-color': '#00ffff', 'line-width': 3 },
+                filter: ['==', 'county', '']
+            });
+
             map.on('click', 'county-fill', (e) => {
                 const props = e.features[0].properties;
-                const popup = new mapboxgl.Popup({
-                    closeOnClick: false,  
-                    closeButton: true    
-                })
-                .setLngLat(e.lngLat)
-                .setHTML(`
-                    <strong>${props.county}, ${props.state}</strong><br>
-                    Cases per 1,000 People: ${props.rates.toLocaleString()}
-                `)
-                .addTo(map);
+                new mapboxgl.Popup({ closeOnClick: false, closeButton: true })
+                    .setLngLat(e.lngLat)
+                    .setHTML(`<strong>${props.county}, ${props.state}</strong><br>Cases per 1,000 People: ${props.rates.toLocaleString()}`)
+                    .addTo(map);
             });
+
             let symbolsHidden = false;
             const toggleBtn = document.getElementById('toggleLabels');
-            map.getStyle().layers.forEach(layer => {
-                if (layer.type === 'symbol') {
-                    map.setPaintProperty(layer.id, 'text-opacity-transition', {
-                        duration: 800
-                    });
-                    map.setPaintProperty(layer.id, 'icon-opacity-transition', {
-                        duration: 800
-                    });
-                }
-            });
+            toggleBtn.addEventListener('click', () => symbolsHidden ? showSymbols() : hideSymbols());
+
             function hideSymbols() {
                 map.getStyle().layers.forEach(layer => {
-                    if (layer.type === 'symbol') {
-                        if (map.getLayer(layer.id)) {
-                            map.setPaintProperty(layer.id, 'text-opacity', 0);
-                            map.setPaintProperty(layer.id, 'icon-opacity', 0);
-                        }
+                    if (layer.type === 'symbol' && map.getLayer(layer.id)) {
+                        map.setPaintProperty(layer.id, 'text-opacity', 0);
+                        map.setPaintProperty(layer.id, 'icon-opacity', 0);
                     }
                 });
                 toggleBtn.innerText = 'Show Labels';
                 symbolsHidden = true;
             }
+
             function showSymbols() {
                 map.getStyle().layers.forEach(layer => {
-                    if (layer.type === 'symbol') {
-                        if (map.getLayer(layer.id)) {
-                            map.setPaintProperty(layer.id, 'text-opacity', 1);
-                            map.setPaintProperty(layer.id, 'icon-opacity', 1);
-                        }
+                    if (layer.type === 'symbol' && map.getLayer(layer.id)) {
+                        map.setPaintProperty(layer.id, 'text-opacity', 1);
+                        map.setPaintProperty(layer.id, 'icon-opacity', 1);
                     }
                 });
                 toggleBtn.innerText = 'Hide Labels';
                 symbolsHidden = false;
             }
-            toggleBtn.addEventListener('click', () => {
-                if (symbolsHidden) {
-                    showSymbols();
-                } else {
-                    hideSymbols();
-                }
-            });
-            hideSymbols();
-        });
-    </script>
-    <div id="legend"></div>
-    <script>
-        const legend = document.getElementById('legend');
 
-        var labels = ['<strong>Cases per 1,000 People</strong>'], vbreak;
-        for (var i = 0; i < grades.length; i++) {
-            vbreak = grades_labels[i];
-            var square_size = 15; 
+            hideSymbols();
+
+            const input = document.getElementById('countySearch');
+            const button = document.getElementById('searchBtn');
+
+            function normalize(text) { return text.toLowerCase().trim(); }
+
+            button.addEventListener('click', () => {
+                const value = normalize(input.value);
+                if (!value.includes(',')) {
+                    alert("Use format: County, State\nExample: King, Washington");
+                    return;
+                }
+
+                const [inputCountyRaw, inputStateRaw] = value.split(',');
+                const inputCounty = normalize(inputCountyRaw);
+                const inputState = normalize(inputStateRaw);
+
+                const match = countyData.features.find(f =>
+                    normalize(f.properties.county) === inputCounty &&
+                    normalize(f.properties.state) === inputState
+                );
+
+                if (!match) {
+                    alert("County not found.\nExample: King, Washington");
+                    return;
+                }
+
+                map.fitBounds(turf.bbox(match), { padding: 40, duration: 4000 });
+                map.setFilter('county-highlight', [
+                    'all',
+                    ['==', ['get', 'county'], match.properties.county],
+                    ['==', ['get', 'state'], match.properties.state]
+                ]);
+            });
+        });
+
+        const legend = document.getElementById('legend');
+        let labels = ['<strong>Cases per 1,000 People</strong>'];
+        for (let i = 0; i < grades.length; i++) {
+            const square_size = 15;
             labels.push(
-                '<p class="break"><i class="dot" style="background:' + colors[i] + 
-                '; width:' + square_size + 'px; height:' + square_size + 'px; border-radius:0; display:inline-block; margin-right:5px;"></i> ' +
-                '<span class="dot-label" style="top: ' + (square_size/2) + 'px;">' + vbreak + '</span></p>'
+                `<p class="break"><i class="dot" style="background:${colors[i]}; width:${square_size}px; height:${square_size}px; border-radius:0; display:inline-block; margin-right:5px;"></i>` +
+                `<span class="dot-label" style="top:${square_size / 2}px;">${grades_labels[i]}</span></p>`
             );
         }
-
-        const source = `
-        <p style="text-align: right; font-size:6pt">
-            Sources:<br>
-            <a href="https://github.com/nytimes/covid-19-data/blob/43d32dde2f87bd4dafbb7d23f5d9e878124018b8/live/us-counties.csv" target="_blank">The New York Times</a><br>
-            <a href="https://data.census.gov/table/ACSDP5Y2018.DP05?g=0100000US$050000&d=ACS+5-Year+Estimates+Data+Profiles&hidePreview=true" target="_blank">2018 ACS 5 Year Estimates</a><br>
-            <a href="https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.html" target="_blank">The U.S. Census Bureau</a>
-        </p>
-        `;
-
-        legend.innerHTML = labels.join('') + source;
+        legend.innerHTML = labels.join('') + `
+            <p style="text-align:right; font-size:6pt">
+                Sources:<br>
+                <a href="https://github.com/nytimes/covid-19-data/blob/43d32dde2f87bd4dafbb7d23f5d9e878124018b8/live/us-counties.csv" target="_blank">The New York Times</a><br>
+                <a href="https://data.census.gov/table/ACSDP5Y2018.DP05?g=0100000US$050000&d=ACS+5-Year+Estimates+Data+Profiles&hidePreview=true" target="_blank">2018 ACS 5 Year Estimates</a><br>
+                <a href="https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.html" target="_blank">The U.S. Census Bureau</a>
+            </p>`;
     </script>
-    <button id="toggleLabels"
-        style="
-        position:absolute;
-        top:20px;
-        right:20px;
-        padding:8px 12px;
-        border-radius:4px;
-        border:none;
-        cursor:pointer;
-        font-family:Open Sans;">
-        Toggle Labels
-    </button>
-    <div id="title">
-        COVID-19 Rates in the U.S.
-    </div>
-    <div id="subtitle">
-        on December 31st, 2020
-    </div>
-    <script src="js/main.js"></script>
 </body>
-
 </html>
