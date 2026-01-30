@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>COVID-19 Cases in the U.S.</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+    <link href="https://api.mapbox.com/mapbox-gl-js/v2.8.1/mapbox-gl.css" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.8.1/mapbox-gl.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+
+        #legend {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 110px;
+            background: #555554;
+            margin-right: 20px;
+            margin-bottom: 40px;
+            padding: 10px 10px 10px 10px;
+            border-radius: 3px;
+            text-align: left;
+            font-family: 'Open Sans', sans-serif;
+            color: white
+        }
+
+        #title {
+            position: absolute;
+            top: 0;
+            left: 0;
+            margin-top: 20px;
+            margin-left: 20px;
+            font-family: 'Open Sans', sans-serif;
+            font-size: 25pt;
+            color: white
+        }
+
+
+        #subtitle {
+            position: absolute;
+            top: 0;
+            left: 0;
+            margin-top: 70px;
+            margin-left: 20px;
+            font-family: 'Open Sans', sans-serif;
+            font-size: 15pt;
+            color: white
+        }
+
+        .break {
+            position: relative;
+            margin: 0px;
+            padding: 0px;
+        }
+
+        .dot {
+            display: inline-block;
+            margin-top: 5px;
+            border-radius: 50%;
+            opacity: 0.6;
+        }
+
+        .dot-label {
+            position: absolute;
+            top: 0;
+            right: 0;
+            font-style: italic;
+        }
+
+        a {
+            color: white
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css"/>
+</head>
+
+<body>
+    <div id="map"></div>
+    <script>
+        const grades = [10000, 50000, 100000, 400000, 800000], 
+            grades_labels = ['10k', '50k', '100k', '400k', '800k'],
+            colors = ['#fef0d9', '#fdcc8a', '#fc8d59', '#e34a33', '#b30000'], 
+            radii = [2, 5, 7, 13, 18];
+        mapboxgl.accessToken =
+            'pk.eyJ1IjoibGlhbnM3NyIsImEiOiJjbWt6NGxhMjcwZTJsM2Vwd2RtbWVvZHRuIn0.HDVAEM1yBC3D51XX3B4NPw';
+        let map = new mapboxgl.Map({
+            container: 'map',
+            projection: 'albers',
+            style: 'mapbox://styles/mapbox/dark-v10',
+            zoom: 3.6,
+            minZoom: 3,
+            maxZoom: 9,
+            center: [-98, 39]
+        });
+        map.on('load', () => {
+            map.addSource('county-boundaries', {
+                type: 'geojson',
+                data: 'assets/us-covid-2020-rates.json'
+            });
+            map.addLayer({
+                'id': 'county-lines',
+                'type': 'line',
+                'source': 'county-boundaries',
+                'paint': {
+                    'line-color': '#555554',
+                    'line-width': 0.5
+                }
+            });
+            map.addSource('us-covid-2020-counts', {
+                type: 'geojson',
+                data: 'assets/us-covid-2020-counts.json'
+            });
+            map.addLayer({
+                'id': 'us-covid-2020-counts-point',
+                'type': 'circle',
+                'source': 'us-covid-2020-counts',
+                'paint': {
+                    'circle-radius': [
+                        'interpolate',
+                        ['exponential', 1.5],
+                        ['zoom'],
+                        3, ['interpolate', ['linear'], ['get', 'cases'],
+                            grades[0], radii[0],
+                            grades[1], radii[1],
+                            grades[2], radii[2],
+                            grades[3], radii[3],
+                            grades[4], radii[4]
+                        ],
+                        9, ['interpolate', ['linear'], ['get', 'cases'],
+                            grades[0], 9*radii[0],
+                            grades[1], 9*radii[1],
+                            grades[2], 9*radii[2],
+                            grades[3], 9*radii[3],
+                            grades[4], 9*radii[4]
+                        ]
+                    ],
+                    'circle-color': [
+                        'interpolate',
+                        ['linear'],
+                        ['get', 'cases'],
+                        grades[0], colors[0],
+                        grades[1], colors[1],
+                        grades[2], colors[2],
+                        grades[3], colors[3],
+                        grades[4], colors[4]
+                    ],
+                    'circle-stroke-color': 'white',
+                    'circle-stroke-width': 0.2,
+                    'circle-opacity': 0.6
+                }
+            });
+            map.on('click', 'us-covid-2020-counts-point', (e) => {
+                const props = e.features[0].properties;
+                const popup = new mapboxgl.Popup({
+                    closeOnClick: false,  
+                    closeButton: true    
+                })
+                .setLngLat(e.lngLat)
+                .setHTML(`
+                    <strong>${props.county}, ${props.state}</strong><br>
+                    Cases: ${props.cases.toLocaleString()}
+                `)
+                .addTo(map);
+            });
+            let symbolsHidden = false;
+            const toggleBtn = document.getElementById('toggleLabels');
+            map.getStyle().layers.forEach(layer => {
+                if (layer.type === 'symbol') {
+                    map.setPaintProperty(layer.id, 'text-opacity-transition', {
+                        duration: 800
+                    });
+                    map.setPaintProperty(layer.id, 'icon-opacity-transition', {
+                        duration: 800
+                    });
+                }
+            });
+            function hideSymbols() {
+                map.getStyle().layers.forEach(layer => {
+                    if (layer.type === 'symbol') {
+                        if (map.getLayer(layer.id)) {
+                            map.setPaintProperty(layer.id, 'text-opacity', 0);
+                            map.setPaintProperty(layer.id, 'icon-opacity', 0);
+                        }
+                    }
+                });
+                toggleBtn.innerText = 'Show Labels';
+                symbolsHidden = true;
+            }
+            function showSymbols() {
+                map.getStyle().layers.forEach(layer => {
+                    if (layer.type === 'symbol') {
+                        if (map.getLayer(layer.id)) {
+                            map.setPaintProperty(layer.id, 'text-opacity', 1);
+                            map.setPaintProperty(layer.id, 'icon-opacity', 1);
+                        }
+                    }
+                });
+                toggleBtn.innerText = 'Hide Labels';
+                symbolsHidden = false;
+            }
+            toggleBtn.addEventListener('click', () => {
+                if (symbolsHidden) {
+                    showSymbols();
+                } else {
+                    hideSymbols();
+                }
+            });
+            hideSymbols();
+        });
+    </script>
+    <div id="legend"></div>
+    <script>
+        const legend = document.getElementById('legend');
+
+        var labels = ['<strong>Cases</strong>'], vbreak;
+        for (var i = 0; i < grades.length; i++) {
+            vbreak = grades_labels[i];
+            dot_radius = 2 * radii[i];
+            labels.push(
+                '<p class="break"><i class="dot" style="background:' + colors[i] + '; width: ' + dot_radius +
+                'px; height: ' +
+                dot_radius + 'px; "></i> <span class="dot-label" style="top: ' + dot_radius / 2 + 'px;">' + vbreak +
+                '</span></p>');
+        }
+        const source = `
+        <p style="text-align: right; font-size:6pt">
+            Sources:<br>
+            <a href="https://github.com/nytimes/covid-19-data/blob/43d32dde2f87bd4dafbb7d23f5d9e878124018b8/live/us-counties.csv" target="_blank">The New York Times</a><br>
+            <a href="https://data.census.gov/table/ACSDP5Y2018.DP05?g=0100000US$050000&d=ACS+5-Year+Estimates+Data+Profiles&hidePreview=true" target="_blank">2018 ACS 5 Year Estimates</a><br>
+            <a href="https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.html" target="_blank">The U.S. Census Bureau</a>
+        </p>
+        `;
+        legend.innerHTML = labels.join('') + source;
+    </script>
+    <button id="toggleLabels"
+        style="
+        position:absolute;
+        top:20px;
+        right:20px;
+        padding:8px 12px;
+        border-radius:4px;
+        border:none;
+        cursor:pointer;
+        font-family:Open Sans;">
+        Toggle Labels
+    </button>
+    <div id="title">
+        COVID-19 Cases in the U.S.
+    </div>
+    <div id="subtitle">
+        on December 31st, 2020
+    </div>
+    <script src="js/main.js"></script>
+</body>
+
+</html>
