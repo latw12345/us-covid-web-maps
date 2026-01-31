@@ -97,12 +97,12 @@
                 source: 'county-boundaries',
                 paint: {
                     'fill-color': [
-                        'interpolate', ['linear'], ['get', 'rates'],
-                        grades[0], colors[0],
-                        grades[1], colors[1],
-                        grades[2], colors[2],
-                        grades[3], colors[3],
-                        grades[4], colors[4]
+                        'step', ['get', 'rates'],
+                        colors[0],
+                        grades[0], colors[1],
+                        grades[1], colors[2],
+                        grades[2], colors[3],
+                        grades[3], colors[4]
                     ],
                     'fill-opacity': 0.6
                 }
